@@ -2,6 +2,9 @@ import re
 
 import requests
 from bs4 import BeautifulSoup
+from owmeta_core.datasource import DataSource
+from owmeta_core.dataobject import DatatypeProperty
+from owmeta_core.dataobject_property import DatatypeProperty as DODatatypeProperty
 
 
 def scrape(accession, session=None):
@@ -30,8 +33,10 @@ def scrape(accession, session=None):
 
 def scrape_file(html_data):
     '''
-    File object with HTML from a modeldb page
+    Scrape data from an HTML document of a modeldb page
 
+    Parameters
+    ----------
     html_data : object
         An object containing a modeldb page's data which is acceptable to
         `~bs4.BeautifulSoup` such as a string or file object
@@ -43,6 +48,9 @@ def scrape_file(html_data):
             .find(text=re.compile('Model Information'))
             .find_next('table')
             .find_all('tr'))
+    data.append(dict(id='accession_id',
+        display_name='Accession ID',
+        values=[int(modinfo.find(id='modelid').text)]))
     data.append(dict(id='modelname',
         values=[soup.find(id='modelname').text],
         display_name='Model Name'))
@@ -50,18 +58,66 @@ def scrape_file(html_data):
     description = descr_ref_row.br.previous_sibling.strip()
     data.append(dict(id='description', values=[description], display_name='Description'))
     for row in rows:
-        record = dict()
+        field = dict()
         tds = row.find_all('td')
-        record['display_name'] = tds[0].text.strip().rstrip(':')
-        record['id'] = tds[1]['id']
+        field['display_name'] = tds[0].text.strip().rstrip(':')
+        field['id'] = tds[1]['id']
         value_anchors = tds[1].find_all('a')
         if value_anchors:
-            record['values'] = [x.text.rstrip(';') for x in value_anchors]
+            field['values'] = [x.text.rstrip(';') for x in value_anchors]
         else:
             text_value = tds[1].text
             if text_value:
-                record['values'] = [text_value]
+                field['values'] = [text_value]
             else:
                 continue
-        data.append(record)
+        data.append(field)
     return data
+
+
+GENERATED_PROPERTIES = dict()
+
+
+def create_property_class(page_id, display_name):
+    global GENERATED_PROPERTIES
+
+    property_name = 'ModelDB_' + page_id
+    prop_class = GENERATED_PROPERTIES.get(property_name)
+
+    if not prop_class:
+        link_name = page_id
+        prop_class = type(property_name, (DODatatypeProperty,), dict(link_name=link_name, label=display_name))
+        GENERATED_PROPERTIES[property_name] = prop_class
+
+    return prop_class
+
+
+def scrape_to_datasource(accession, session):
+    '''
+    Scrape a ModelDB page into a `owmeta_core.datasource.DataSource`
+
+    See Also
+    --------
+    `scrape` - parameters are the same
+    '''
+    data = scrape(accession)
+    res = ModelDBDataSource()
+    for d in data:
+        if d['id'] == 'accession_id':
+            for v in d['values']:
+                res.accession_id(v)
+            continue
+        prop_class = create_property_class(d['id'], d['display_name'])
+        prop = res.attach_property(prop_class)
+        for v in d['values']:
+            prop(v)
+
+    return res
+
+
+class ModelDBDataSource(DataSource):
+    '''
+    A data source of a single ModelDB record
+    '''
+    accession_id = DatatypeProperty(__doc__='Accession ID within ModelDB',
+            label='Accession ID')
