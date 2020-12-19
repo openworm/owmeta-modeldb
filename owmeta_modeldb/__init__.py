@@ -1,14 +1,26 @@
 import re
 
-import requests
 from bs4 import BeautifulSoup
-from owmeta_core.datasource import DataSource
+from owmeta_core.datasource import DataSource, Informational
 from owmeta_core.dataobject import (DatatypeProperty,
                                     PythonClassDescription,
                                     PythonModule,
                                     ClassResolutionFailed,
                                     DATAOBJECT_PROPERTY_NAME_PREFIX)
+from owmeta_core import BASE_CONTEXT
+from owmeta_core.context import ClassContext
 from owmeta_core.dataobject_property import DatatypeProperty as DODatatypeProperty
+import requests
+from rdflib.namespace import Namespace
+
+
+BASE_SCHEMA_URL = 'http://schema.openworm.org/2020/07/sci/modeldb'
+BASE_DATA_URL = 'http://data.openworm.org/sci/modeldb'
+
+
+CONTEXT = ClassContext(imported=(BASE_CONTEXT,),
+                      ident=BASE_SCHEMA_URL,
+                      base_namespace=BASE_SCHEMA_URL + '#')
 
 
 def scrape(accession, session=None):
@@ -95,9 +107,10 @@ def create_property_class(local_id, display_name):
     if not prop_class:
         declare_class_description = declare_class_description_generator(local_id, display_name)
         prop_class = type(property_name,
-                (DODatatypeProperty,),
+                (ModelDB, DODatatypeProperty,),
                 dict(link_name=local_id,
                      label=display_name,
+                     base_namespace=ModelDBDataSource.schema_namespace,
                      declare_class_description=declare_class_description))
         GENERATED_PROPERTIES[property_name] = prop_class
 
@@ -120,56 +133,20 @@ def declare_class_description_generator(local_id, display_name):
     return declare_class_description
 
 
-class ModelDBPropertyClassDescription(PythonClassDescription):
-    '''
-    Description of a `ModelDBDataSource` property
-    '''
-
-    local_id = DatatypeProperty(__doc__='ID used on the page')
-    display_name = DatatypeProperty(__doc__='Display name')
-
-    key_properties = ['name', 'module', 'local_id']
-
-    def resolve_class(self):
-        local_id = self.local_id()
-        if not local_id:
-            raise ClassResolutionFailed('Missing local_id')
-
-        display_name = self.display_name()
-        if not display_name:
-            raise ClassResolutionFailed('Missing display_name')
-        return create_property_class(local_id, display_name)
+class ModelDB:
+    base_namespace = Namespace(BASE_SCHEMA_URL + '/')
+    base_data_namespace = Namespace(BASE_DATA_URL + '/')
 
 
-def scrape_to_datasource(accession, session):
-    '''
-    Scrape a ModelDB page into a `owmeta_core.datasource.DataSource`
-
-    See Also
-    --------
-    `scrape` - parameters are the same
-    '''
-    data = scrape(accession)
-    res = ModelDBDataSource()
-    for d in data:
-        if d['id'] == 'accession_id':
-            for v in d['values']:
-                res.accession_id(v)
-            continue
-        prop_class = create_property_class(d['id'], d['display_name'])
-        prop = res.attach_property(prop_class)
-        for v in d['values']:
-            prop(v)
-
-    return res
-
-
-class ModelDBDataSource(DataSource):
+class ModelDBDataSource(ModelDB, DataSource):
     '''
     A data source of a single ModelDB record
     '''
-    accession_id = DatatypeProperty(label='Accession ID',
-            __doc__='Accession ID within ModelDB')
+
+    class_context = CONTEXT
+    accession_id = Informational(display_name='Accession ID',
+            description='Accession ID within ModelDB',
+            multiple=False)
 
     def __getattr__(self, name):
         # Tries to load the property from the graph
@@ -182,3 +159,50 @@ class ModelDBDataSource(DataSource):
             return self.attach_property(pclass)
         except ClassResolutionFailed:
             raise AttributeError(name)
+
+    @classmethod
+    def scrape_to_datasource(cls, accession, session):
+        '''
+        Scrape a ModelDB page into a `owmeta_core.datasource.DataSource`
+
+        See Also
+        --------
+        `scrape` - parameters are the same
+        '''
+        data = scrape(accession)
+        res = cls()
+        for d in data:
+            if d['id'] == 'accession_id':
+                for v in d['values']:
+                    res.accession_id(v)
+                continue
+            prop_class = create_property_class(d['id'], d['display_name'])
+            prop = res.attach_property(prop_class)
+            for v in d['values']:
+                prop(v)
+
+        return res
+
+
+print("ModelDBDataSource.schema_namespace", ModelDBDataSource.schema_namespace)
+
+
+class ModelDBPropertyClassDescription(ModelDB, PythonClassDescription):
+    '''
+    Description of a `ModelDBDataSource` property
+    '''
+
+    local_id = DatatypeProperty(__doc__='ID used on the page')
+    display_name = DatatypeProperty(__doc__='Display name')
+
+    key_properties = ('name', 'module', 'local_id')
+
+    def resolve_class(self):
+        local_id = self.local_id()
+        if not local_id:
+            raise ClassResolutionFailed('Missing local_id')
+
+        display_name = self.display_name()
+        if not display_name:
+            raise ClassResolutionFailed('Missing display_name')
+        return create_property_class(local_id, display_name)
