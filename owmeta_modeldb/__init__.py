@@ -3,7 +3,10 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from owmeta_core.datasource import DataSource
-from owmeta_core.dataobject import DatatypeProperty
+from owmeta_core.dataobject import (DatatypeProperty,
+                                    PythonClassDescription,
+                                    PythonModule,
+                                    ClassResolutionFailed)
 from owmeta_core.dataobject_property import DatatypeProperty as DODatatypeProperty
 
 
@@ -78,18 +81,56 @@ def scrape_file(html_data):
 GENERATED_PROPERTIES = dict()
 
 
-def create_property_class(page_id, display_name):
+def create_property_class(local_id, display_name):
     global GENERATED_PROPERTIES
 
-    property_name = 'ModelDB_' + page_id
+    property_name = 'ModelDB_' + local_id
     prop_class = GENERATED_PROPERTIES.get(property_name)
 
     if not prop_class:
-        link_name = page_id
-        prop_class = type(property_name, (DODatatypeProperty,), dict(link_name=link_name, label=display_name))
+        link_name = local_id
+        declare_class_description = declare_class_description_generator(local_id, display_name)
+        prop_class = type(property_name,
+                (DODatatypeProperty,),
+                dict(link_name=link_name,
+                     label=display_name,
+                     declare_class_description=declare_class_description))
         GENERATED_PROPERTIES[property_name] = prop_class
 
     return prop_class
+
+
+def declare_class_description_generator(local_id, display_name):
+    def declare_class_description(self):
+        cd = ModelDBPropertyClassDescription.contextualize(self.context)()
+
+        mo = PythonModule.contextualize(self.context)()
+        mo.name(self.__module__)
+
+        cd.module(mo)
+        cd.name(self.__name__)
+        cd.local_id(local_id)
+        cd.display_name(display_name)
+
+        return cd
+    return declare_class_description
+
+
+class ModelDBPropertyClassDescription(PythonClassDescription):
+    local_id = DatatypeProperty(__doc__='ID used on the page')
+    display_name = DatatypeProperty(__doc__='Display name')
+
+    key_properties = ['name', 'module', 'local_id']
+
+    def resolve_class(self):
+        local_id = self.local_id()
+        if not local_id:
+            raise ClassResolutionFailed('Missing local_id')
+
+        display_name = self.display_name()
+        if not display_name:
+            raise ClassResolutionFailed('Missing display_name')
+        return create_property_class(local_id, display_name)
 
 
 def scrape_to_datasource(accession, session):

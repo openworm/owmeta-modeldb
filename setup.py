@@ -5,4 +5,5 @@ setup(name='owmeta_modeldb',
           'owmeta_core',
           'beautifulsoup4',
           'requests',
-          'cachecontrol[filecache]'])
+          'cachecontrol[filecache]'],
+      packages=['owmeta_modeldb'])
