@@ -2,7 +2,7 @@ from owmeta_core.data import Data
 from owmeta_core.context import Context
 from owmeta_core.dataobject import PythonModule
 from owmeta_core.dataobject_property import Property
-from owmeta_modeldb import ModelDBPropertyClassDescription
+from owmeta_modeldb import ModelDBPropertyClassDescription, ModelDBDataSource
 
 
 def test_resolve_property_class_staged():
@@ -29,3 +29,22 @@ def test_resolve_property_class_stored():
     ctx1 = Context(ctxid, conf=conf)
     ctx1.stored(ModelDBPropertyClassDescription)(ident=cd.identifier)
     assert issubclass(cd.resolve_class(), Property)
+
+
+def test_resolve_property_attr_from_graph():
+    conf = Data()
+    conf.init()
+    ctxid = 'http://example.org/ctx'
+    ctx0 = Context(ctxid, conf=conf)
+    modname = ModelDBPropertyClassDescription.__module__
+    mod = ctx0(PythonModule)(name=modname)
+    ctx0(ModelDBPropertyClassDescription)(
+            name='ModelDB_test_property',
+            local_id='test_property',
+            display_name='Test Property',
+            module=mod)
+    ctx0.save()
+
+    ctx1 = Context(ctxid, conf=conf)
+    ds = ctx1.stored(ModelDBDataSource)()
+    assert ds.test_property is ds.test_property

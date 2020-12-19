@@ -6,7 +6,8 @@ from owmeta_core.datasource import DataSource
 from owmeta_core.dataobject import (DatatypeProperty,
                                     PythonClassDescription,
                                     PythonModule,
-                                    ClassResolutionFailed)
+                                    ClassResolutionFailed,
+                                    DATAOBJECT_PROPERTY_NAME_PREFIX)
 from owmeta_core.dataobject_property import DatatypeProperty as DODatatypeProperty
 
 
@@ -82,17 +83,20 @@ GENERATED_PROPERTIES = dict()
 
 
 def create_property_class(local_id, display_name):
+    '''
+    Creates a Property sub-class for properties defined on ModelDB pages. We don't define
+    them statically to avoid the cost of managing additions of properties
+    '''
     global GENERATED_PROPERTIES
 
     property_name = 'ModelDB_' + local_id
     prop_class = GENERATED_PROPERTIES.get(property_name)
 
     if not prop_class:
-        link_name = local_id
         declare_class_description = declare_class_description_generator(local_id, display_name)
         prop_class = type(property_name,
                 (DODatatypeProperty,),
-                dict(link_name=link_name,
+                dict(link_name=local_id,
                      label=display_name,
                      declare_class_description=declare_class_description))
         GENERATED_PROPERTIES[property_name] = prop_class
@@ -117,6 +121,10 @@ def declare_class_description_generator(local_id, display_name):
 
 
 class ModelDBPropertyClassDescription(PythonClassDescription):
+    '''
+    Description of a `ModelDBDataSource` property
+    '''
+
     local_id = DatatypeProperty(__doc__='ID used on the page')
     display_name = DatatypeProperty(__doc__='Display name')
 
@@ -160,5 +168,17 @@ class ModelDBDataSource(DataSource):
     '''
     A data source of a single ModelDB record
     '''
-    accession_id = DatatypeProperty(__doc__='Accession ID within ModelDB',
-            label='Accession ID')
+    accession_id = DatatypeProperty(label='Accession ID',
+            __doc__='Accession ID within ModelDB')
+
+    def __getattr__(self, name):
+        # Tries to load the property from the graph
+        if name.startswith(DATAOBJECT_PROPERTY_NAME_PREFIX):
+            # Skip attributes that we *really* shouldn't be able to resolve
+            return super().__getattr__(name)
+        cd_type = ModelDBPropertyClassDescription.contextualize(self.context).query
+        try:
+            pclass = cd_type(local_id=name).resolve_class()
+            return self.attach_property(pclass)
+        except ClassResolutionFailed:
+            raise AttributeError(name)
