@@ -1,4 +1,5 @@
 import re
+from shutil import copyfileobj
 
 from bs4 import BeautifulSoup
 from owmeta_core.datasource import DataSource, Informational
@@ -73,6 +74,8 @@ def scrape_file(html_data):
     descr_ref_row = modinfo.find_all('tr', recursive=False, limit=2)[1]
     description = descr_ref_row.br.previous_sibling.strip()
     data.append(dict(id='description', values=[description], display_name='Description'))
+    download_url = soup.find(id='downloadmodelzip')['href']
+    data.append(dict(id='download_url', values=[download_url]))
     for row in rows:
         field = dict()
         tds = row.find_all('td')
@@ -147,6 +150,13 @@ class ModelDBDataSource(ModelDB, DataSource):
     accession_id = Informational(display_name='Accession ID',
             description='Accession ID within ModelDB',
             multiple=False)
+    download_url = Informational(display_name='Download URL',
+            description='URL for downloading',
+            multiple=False)
+    base_directory = Informational(display_name='Base Model Directory',
+            Description='Base directory of the downloaded model archive')
+
+    key_property = 'accession_id'
 
     def __getattr__(self, name):
         # Tries to load the property from the graph
@@ -160,21 +170,65 @@ class ModelDBDataSource(ModelDB, DataSource):
         except ClassResolutionFailed:
             raise AttributeError(name)
 
+    def download(self, dest, base_url='https://senselab.med.yale.edu', session=None):
+        '''
+        Download model files. Note that if the destination file already exists, it will be
+        overwritten without warning if the operating system permits that.
+
+        Parameters
+        ----------
+        dest : str
+            Destination file for the download.
+        base_url : str, optional
+            Base URL for the download
+        session : requests.session.Session, optional
+            Session to use for the download. If not provided, a new session will be
+            created
+        '''
+        if session is None:
+            session = requests.Session()
+        response = session.get(base_url + self.download_url(), stream=True)
+        with open(dest, 'wb') as out:
+            copyfileobj(response.raw, out)
+
     @classmethod
-    def scrape_to_datasource(cls, accession, session):
+    def scrape_to_datasource(cls, accession, session=None, init_params=None):
         '''
         Scrape a ModelDB page into a `owmeta_core.datasource.DataSource`
 
+        Parameters
+        ----------
+        accession : str or int
+            Accession number or URL for the model
+        session : requests.Session
+            Session to use for getting the document. Optional.
+        init_params : dict, optional
+            Additional parameters to the DataSource created
+
+        Returns
+        -------
+        ModelDBDataSource
+            The datasource created from the indicated ModelDB page
+
         See Also
         --------
-        `scrape` - parameters are the same
+        `scrape` shares some parameters
         '''
-        data = scrape(accession)
-        res = cls()
+        data = scrape(accession, session)
+
+        if init_params is None:
+            init_params = dict()
+
+        res = cls(**init_params)
+
         for d in data:
             if d['id'] == 'accession_id':
                 for v in d['values']:
                     res.accession_id(v)
+                continue
+            elif d['id'] == 'download_url':
+                for v in d['values']:
+                    res.download_url(v)
                 continue
             prop_class = create_property_class(d['id'], d['display_name'])
             prop = res.attach_property(prop_class)
@@ -182,9 +236,6 @@ class ModelDBDataSource(ModelDB, DataSource):
                 prop(v)
 
         return res
-
-
-print("ModelDBDataSource.schema_namespace", ModelDBDataSource.schema_namespace)
 
 
 class ModelDBPropertyClassDescription(ModelDB, PythonClassDescription):

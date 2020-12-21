@@ -14,7 +14,9 @@ base_session = requests.Session()
 http_cache = FileCache('.http_cache')
 session = CacheControl(base_session, cache=http_cache)
 #pprint(scrape(229585, session))
-ds = ModelDBDataSource.scrape_to_datasource('http://modeldb.yale.edu/266842', session)
+ds = ModelDBDataSource.scrape_to_datasource('http://modeldb.yale.edu/266842', session,
+        init_params=dict())
+ds.download('./266842.zip', session=session)
 
 print(ds)
 print(ds.rdf.serialize(format='n3'))
