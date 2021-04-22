@@ -1,0 +1,6 @@
+---
+repo: openworm/owmeta-modeldb
+shortDescription: "Tools for retrieving ModelDB models and using them within the owmeta framework"
+coordinator: mark@openworm.org
+parent:
+  - openworm/owmeta-core
