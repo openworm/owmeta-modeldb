@@ -2,5 +2,6 @@
 repo: openworm/owmeta-modeldb
 shortDescription: Tools for retrieving ModelDB models and using them within the owmeta framework
 coordinator: mark@openworm.org
+keywords: ['modeldb', 'neuron', 'computational-neuroscience']
 parent:
   - openworm/owmeta-core
