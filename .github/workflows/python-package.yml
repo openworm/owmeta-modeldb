@@ -35,7 +35,7 @@ jobs:
       run: |
         pytest --cov=./owmeta_modeldb
     - name: Coveralls
-      run: coveralls --service=github
+      run: coveralls
       env:
         COVERALLS_FLAG_NAME: ${{ matrix.python-version }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
