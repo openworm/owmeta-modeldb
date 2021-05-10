@@ -10,7 +10,8 @@ on:
     branches: [ develop, master ]
 
 env:
-  - COVERALLS_PARALLEL=true
+  COVERALLS_PARALLEL: true
+
 jobs:
   build:
 
